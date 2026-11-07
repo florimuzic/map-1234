@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+  html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; }
+  #map { height: 100%; background: #fff; }
+  .box, .legend {
+    padding: 6px 8px; background: rgba(255,255,255,.9); border-radius: 5px;
+    box-shadow: 0 0 15px rgba(0,0,0,.2); text-align: center;
+  }
+  .legend {
+    font: bold 14px/18px Arial, Helvetica, sans-serif; color: #555; width: 100px;
+  }
+  .legend i { width: 16px; height: 16px; float: left; opacity: .7; margin-right: 8px; clear: both; }
+  #info {
+    position: absolute; bottom: 10px; left: 10px; z-index: 1000;
+    padding: 6px 16px; font-size: 1.5em; font-weight: bold; line-height: 1.1em;
+    display: flex; align-items: center; gap: 12px; min-height: 28px;
+  }
+  #info img { height: 24px; display: none; border: 1px solid #ddd; }
+  #info.empty { display: none; }
+  .leaflet-control-zoom a { font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="info" class="box empty"><img id="flag" alt=""><span id="name"></span></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(function () {
+  var DATA_URLS = [
+    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson",
+    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/110m/cultural/ne_110m_admin_0_countries.json",
+    "https://cdn.jsdelivr.net/gh/martynafford/natural-earth-geojson@master/110m/cultural/ne_110m_admin_0_countries.json"
+  ];
+  function loadData(i) {
+    if (i >= DATA_URLS.length) return Promise.reject(new Error("All data sources failed"));
+    return fetch(DATA_URLS[i])
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .catch(function (e) { console.warn("Source failed:", DATA_URLS[i], e); return loadData(i + 1); });
+  }
+
+  var continents = {
+    "Europe":        { colors: ["#809bce","#7291cc","#6983b3","#6d90d1","#506ca1"] },
+    "North America": { colors: ["#8a508f","#b771bd","#9f6fa3","#865e8a","#ac69b3"] },
+    "South America": { colors: ["#8a508f","#b771bd","#9f6fa3","#865e8a","#ac69b3"] },
+    "Africa":        { colors: ["#b8e0d4","#a3c4ba","#a3d4c5","#88bdad","#91e3ca"] },
+    "Asia":          { colors: ["#eac4d5","#eac4d5","#dea0bc","#d1a3b8","#eda6c6"] },
+    "Oceania":       { colors: ["#d6eadf","#deffed","#bae3cd","#9dc4af","#cef0de"] }
+  };
+
+  var map = L.map("map", {
+    center: [57.0168, 15.6445],
+    zoom: 1,
+    minZoom: 1,
+    worldCopyJump: true,
+    attributionControl: false
+  });
+
+  function colorFor(p) {
+    var c = continents[p.CONTINENT];
+    if (!c) return "#fff";
+    var code = (p.ADM0_A3 || p.NAME || "A").charCodeAt(0);
+    return c.colors[code % c.colors.length];
+  }
+  function baseStyle(f) {
+    return { fillColor: colorFor(f.properties), weight: 1, opacity: 1, color: "white", fillOpacity: 0.7 };
+  }
+
+  var info = document.getElementById("info"),
+      nameEl = document.getElementById("name"),
+      flagEl = document.getElementById("flag");
+
+  function show(p) {
+    var iso = p.ISO_A2_EH && p.ISO_A2_EH !== "-99" ? p.ISO_A2_EH : p.ISO_A2;
+    nameEl.textContent = p.NAME || "";
+    if (iso && iso !== "-99") {
+      flagEl.src = "https://flagcdn.com/w40/" + iso.toLowerCase() + ".png";
+      flagEl.style.display = "block";
+    } else {
+      flagEl.style.display = "none";
+    }
+    info.classList.remove("empty");
+  }
+
+  var geo;
+  loadData(0)
+    .then(function (data) {
+      geo = L.geoJSON(data, {
+        style: baseStyle,
+        onEachFeature: function (feature, layer) {
+          layer.on({
+            mouseover: function (e) {
+              e.target.setStyle({ weight: 2, color: "#666", fillColor: "#ddd" });
+              e.target.bringToFront();
+              show(feature.properties);
+            },
+            mouseout: function (e) { geo.resetStyle(e.target); },
+            click: function (e) {
+              e.target.setStyle({ weight: 2, color: "#444", fillColor: "#fff" });
+              show(feature.properties);
+            }
+          });
+        }
+      }).addTo(map);
+    })
+    .catch(function (err) {
+      nameEl.textContent = "Could not load map data";
+      info.classList.remove("empty");
+      console.error("Map data failed to load:", err);
+    });
+
+  var legend = L.control({ position: "bottomright" });
+  legend.onAdd = function () {
+    var div = L.DomUtil.create("div", "legend");
+    var items = [["Europe", "#809bce"], ["America", "#8a508f"], ["Africa", "#b8e0d4"], ["Asia", "#eac4d5"], ["Oceania", "#d6eadf"]];
+    div.innerHTML = items.map(function (i) {
+      return '<i style="background:' + i[1] + '"></i>' + i[0];
+    }).join("<br>");
+    return div;
+  };
+  legend.addTo(map);
+})();
+</script>
+</body>
+</html>
